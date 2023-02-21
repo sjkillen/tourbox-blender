@@ -1,0 +1,131 @@
+use std::fmt::Display;
+
+#[derive(Debug)]
+pub enum TourboxInput {
+    SideThumbPress,
+    SideThumbRelease,
+    FlatWheelRight,
+    FlatWheelLeft,
+    FlatWheelPress,
+    FlatWheelRelease,
+    MouseWheelUp,
+    MouseWheelDown,
+    MouseWheelPress,
+    MouseWheelRelease,
+    TallDialRight,
+    TallDialLeft,
+    TallDialPress,
+    TallDialRelease,
+    ButtonNearTallDialPress,
+    ButtonNearTallDialRelease,
+    LongBarButtonPress,
+    LongBarButtonRelease,
+    DpadUpPress,
+    DpadUpRelease,
+    DpadRightPress,
+    DpadRightRelease,
+    DpadDownPress,
+    DpadDownRelease,
+    DpadLeftPress,
+    DpadLeftRelease,
+    BottomRightClickerLeftPress,
+    BottomRightClickerLeftRelease,
+    BottomRightClickerRightPress,
+    BottomRightClickerRightRelease,
+    LogoButtonLeftPress,
+    LogoButtonLeftRelease,
+    LogoButtonRightPress,
+    LogoButtonRightRelease,
+    Unknown,
+}
+
+// TODO: There's probably a way to auto derive this impl
+impl Display for TourboxInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            TourboxInput::SideThumbPress => "SideThumbPress",
+            TourboxInput::SideThumbRelease => "SideThumbRelease",
+            TourboxInput::FlatWheelRight => "FlatWheelRight",
+            TourboxInput::FlatWheelLeft => "FlatWheelLeft",
+            TourboxInput::FlatWheelPress => "FlatWheelPress",
+            TourboxInput::FlatWheelRelease => "FlatWheelRelease",
+            TourboxInput::MouseWheelUp => "MouseWheelUp",
+            TourboxInput::MouseWheelDown => "MouseWheelDown",
+            TourboxInput::MouseWheelPress => "MouseWheelPress",
+            TourboxInput::MouseWheelRelease => "MouseWheelRelease",
+            TourboxInput::TallDialRight => "TallDialRight",
+            TourboxInput::TallDialLeft => "TallDialLeft",
+            TourboxInput::TallDialPress => "TallDialPress",
+            TourboxInput::TallDialRelease => "TallDialRelease",
+            TourboxInput::ButtonNearTallDialPress => "ButtonNearTallDialPress",
+            TourboxInput::ButtonNearTallDialRelease => "ButtonNearTallDialRelease",
+            TourboxInput::LongBarButtonPress => "LongBarButtonPress",
+            TourboxInput::LongBarButtonRelease => "LongBarButtonRelease",
+            TourboxInput::DpadUpPress => "DpadUpPress",
+            TourboxInput::DpadUpRelease => "DpadUpRelease",
+            TourboxInput::DpadRightPress => "DpadRightPress",
+            TourboxInput::DpadRightRelease => "DpadRightRelease",
+            TourboxInput::DpadDownPress => "DpadDownPress",
+            TourboxInput::DpadDownRelease => "DpadDownRelease",
+            TourboxInput::DpadLeftPress => "DpadLeftPress",
+            TourboxInput::DpadLeftRelease => "DpadLeftRelease",
+            TourboxInput::BottomRightClickerLeftPress => "BottomRightClickerLeftPress",
+            TourboxInput::BottomRightClickerLeftRelease => "BottomRightClickerLeftRelease",
+            TourboxInput::BottomRightClickerRightPress => "BottomRightClickerRightPress",
+            TourboxInput::BottomRightClickerRightRelease => "BottomRightClickerRightRelease",
+            TourboxInput::LogoButtonLeftPress => "LogoButtonLeftPress",
+            TourboxInput::LogoButtonLeftRelease => "LogoButtonLeftRelease",
+            TourboxInput::LogoButtonRightPress => "LogoButtonRightPress",
+            TourboxInput::LogoButtonRightRelease => "LogoButtonRightRelease",
+            TourboxInput::Unknown => "Unknown",
+        };
+        write!(f, "{}", text)
+    }
+}
+
+impl TourboxInput {
+    pub fn from_u8(b: u8) -> TourboxInput {
+        match b {
+            0x01 => TourboxInput::SideThumbPress,
+            0x81 => TourboxInput::SideThumbRelease,
+            0x38 => TourboxInput::FlatWheelPress,
+            0xb8 => TourboxInput::FlatWheelRelease,
+            0x0a => TourboxInput::MouseWheelPress,
+            0x8a => TourboxInput::MouseWheelRelease,
+            0x37 => TourboxInput::TallDialPress,
+            0xb7 => TourboxInput::TallDialRelease,
+            0x2a => TourboxInput::ButtonNearTallDialPress,
+            0xaa => TourboxInput::ButtonNearTallDialRelease,
+            0x02 => TourboxInput::LongBarButtonPress,
+            0x82 => TourboxInput::LongBarButtonRelease,
+            0x10 => TourboxInput::DpadUpPress,
+            0x90 => TourboxInput::DpadUpRelease,
+            0x13 => TourboxInput::DpadRightPress,
+            0x93 => TourboxInput::DpadRightRelease,
+            0x11 => TourboxInput::DpadDownPress,
+            0x91 => TourboxInput::DpadDownRelease,
+            0x12 => TourboxInput::DpadLeftPress,
+            0x92 => TourboxInput::DpadLeftRelease,
+            0x00 => TourboxInput::BottomRightClickerLeftPress,
+            0x80 => TourboxInput::BottomRightClickerLeftRelease,
+            0x03 => TourboxInput::BottomRightClickerRightPress,
+            0x83 => TourboxInput::BottomRightClickerRightRelease,
+            0x22 => TourboxInput::LogoButtonLeftPress,
+            0xa2 => TourboxInput::LogoButtonLeftRelease,
+            0x23 => TourboxInput::LogoButtonRightPress,
+            0xa3 => TourboxInput::LogoButtonRightRelease,
+            _ => TourboxInput::Unknown,
+        }
+    }
+    pub fn from_u16(b: u16) -> TourboxInput {
+        match b {
+            0x4fcf => TourboxInput::FlatWheelRight,
+            0x0f8f => TourboxInput::FlatWheelLeft,
+            0x49c9 => TourboxInput::MouseWheelUp,
+            0x0989 => TourboxInput::MouseWheelDown,
+            0x44c4 => TourboxInput::TallDialRight,
+            0x0484 => TourboxInput::TallDialLeft,
+            _ => TourboxInput::Unknown,
+        }
+    }
+}
