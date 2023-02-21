@@ -16,7 +16,6 @@ const UUID_CHAR000C: Uuid = Uuid::from_u128(0xfff100001000800000805f9b34fb);
 const UUID_CHAR000C_DESC000E: Uuid = Uuid::from_u128(0x290200001000800000805f9b34fb);
 
 mod input;
-mod main3;
 
 pub struct Tourbox {
     pub device: Device,
