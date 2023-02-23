@@ -76,12 +76,12 @@ impl Tourbox {
         writer.write_all(&line_4).await?;
         writer.write_all(&line_5).await?;
         writer.write_all(&line_6).await?;
-        println!("initial protocol completed");
         Ok(())
     }
     pub async fn notifications(&mut self) -> bluer::Result<()> {
         let mut notifier = self.char000c.notify_io().await?;
         let mut buffer = [0u8; 2];
+        eprintln!("Listening for events...");
         loop {
             let amount = notifier.read(&mut buffer).await?;
             let event = if amount == 1 {
@@ -91,7 +91,7 @@ impl Tourbox {
             } else {
                 panic!()
             };
-            println!("Got {event}");
+            println!("{}", event);
         }
     }
 }
@@ -130,7 +130,7 @@ async fn main() -> bluer::Result<()> {
     adapter.set_powered(true).await?;
 
     let mut tb = Tourbox::new(DEVICE_ADDR, adapter).await;
-    println!("Device connected! :)");
+    eprintln!("Device connected! :)");
     tb.initial_protocol().await?;
     tb.notifications().await?;
 
