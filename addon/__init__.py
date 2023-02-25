@@ -28,32 +28,114 @@ from signal import SIGINT
 from subprocess import Popen, PIPE
 from threading import Thread
 from typing import IO
+from typing import Generic
+
 
 import bpy
 from bpy.types import Brush
 
+T = Generic()
+
 EXE = "/home/squirrel/tourbox-blender/target/debug/tbelite"
 
-known_modes = ("SCULPT",)
-supported_events = ("MouseWheelUp", "MouseWheelDown")
+
+TallDialPressed = False
+FlatWheelPressed = False
 
 
 def on_input_event(event: str):
+    global TallDialPressed, FlatWheelPressed
+
     mode = bpy.context.mode
     if mode not in known_modes:
         return
     print(event)
+    known_modes[mode](event)
+
+
+def edit_on_input_event(event: str):
+    match event:
+        case "LogoButtonLeftPress":
+            bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
+        case "LogoButtonRightPress":
+            bpy.ops.object.mode_set(mode="SCULPT", toggle=False)
+
+
+def object_on_input_event(event: str):
+    match event:
+        case "LogoButtonLeftPress":
+            bpy.ops.object.mode_set(mode="EDIT", toggle=False)
+        case "LogoButtonRightPress":
+            bpy.ops.object.mode_set(mode="SCULPT", toggle=False)
+
+
+def sculpt_on_input_event(event: str):
+    global TallDialPressed, FlatWheelPressed
+
+    mode = "SCULPT"
+
     match event:
         case "MouseWheelUp":
             cycle_mode_brush(mode, -1)
         case "MouseWheelDown":
             cycle_mode_brush(mode, 1)
+        case "TallDialPress":
+            TallDialPressed = True
+        case "TallDialRelease":
+            TallDialPressed = False
+        case "FlatWheelPress":
+            FlatWheelPressed = True
+        case "FlatWheelRelease":
+            FlatWheelPressed = False
+        case "ButtonNearTallDialPress":
+            brush = get_mode_active_brush(mode)
+            brush.direction = ({"SUBTRACT", "ADD"} - {brush.direction}).pop()
+        case "LogoButtonLeftPress":
+            bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
+        case "LongBarButtonPress":
+            brush = (
+                bpy.context.tool_settings.unified_paint_settings
+                if bpy.context.tool_settings.unified_paint_settings.use_unified_size
+                else get_mode_active_brush(mode)
+            )
+            brush.use_locked_size = ({"VIEW", "SCENE"} - {brush.use_locked_size}).pop()
+        case "TallDialRight" | "TallDialLeft" | "FlatWheelRight" | "FlatWheelLeft":
+            direction = 1 if "Right" in event else -1
+            unified_settings = bpy.context.tool_settings.unified_paint_settings
+            brush = get_mode_active_brush(mode)
+            if "TallDial" in event:
+                scroll_value_T(
+                    unified_settings if unified_settings.use_unified_size else brush,
+                    "size",
+                    0,
+                    500,
+                    (2 if TallDialPressed else 20) * direction,
+                )
+            else:
+                # Unified strength is broken in Blender currently
+                # https://projects.blender.org/blender/blender/issues/99172
+                # So it should always be left disabled
+                scroll_value_T(
+                    unified_settings
+                    if unified_settings.use_unified_strength
+                    else brush,
+                    "strength",
+                    0,
+                    1,
+                    (0.02 if FlatWheelPressed else 0.08) * direction,
+                )
+
+
+def scroll_value_T(target, attr: str, minv: T, maxv: T, step: T):
+    incremented = getattr(target, attr) + step
+    clamped = min(max(incremented, minv), maxv)
+    setattr(target, attr, clamped)
 
 
 def thread_entry(file: IO):
     while True:
         data = file.readline().decode("utf-8").strip()
-        if data in supported_events:
+        if data != "Unknown" and data.strip():
             # Hack to get back to a "safe" blender thread, hopefully. But nothing is certain
             bpy.app.timers.register(partial(on_input_event, data), first_interval=0)
 
@@ -88,8 +170,10 @@ def lookup_brush(mode: str, brush_name: str) -> str | None:
         (brush for brush in get_mode_brushes(mode) if brush.name == brush_name), None
     )
 
+
 class MissingBrush(Exception):
     pass
+
 
 def tool_to_brush(mode: str, toollabel: str):
     """Hackily convert tool label to brushname
@@ -105,7 +189,7 @@ def tool_to_brush(mode: str, toollabel: str):
     brush = lookup_brush(mode, mode_label)
     if brush is not None:
         return brush
-    for suffix in ("/Deflate", "/Contrast", "/Deepen","/Peaks","/Magnify"):
+    for suffix in ("/Deflate", "/Contrast", "/Deepen", "/Peaks", "/Magnify"):
         brush = lookup_brush(mode, f"{toollabel}{suffix}")
         if brush is not None:
             return brush
@@ -162,3 +246,10 @@ def register():
 
 def unregister():
     stop_daemon()
+
+
+known_modes = {
+    "SCULPT": sculpt_on_input_event,
+    "EDIT_MESH": edit_on_input_event,
+    "OBJECT": object_on_input_event,
+}
