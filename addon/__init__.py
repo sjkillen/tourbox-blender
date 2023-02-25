@@ -32,14 +32,16 @@ from typing import IO
 import bpy
 from bpy.types import Brush
 
-EXE = "/home/vole/tourbox-blender/target/debug/tbelite"
+EXE = "/home/squirrel/tourbox-blender/target/debug/tbelite"
 
 known_modes = ("SCULPT",)
 supported_events = ("MouseWheelUp", "MouseWheelDown")
 
 
 def on_input_event(event: str):
-    mode = "SCULPT"
+    mode = bpy.context.mode
+    if mode not in known_modes:
+        return
     print(event)
     match event:
         case "MouseWheelUp":
@@ -52,6 +54,7 @@ def thread_entry(file: IO):
     while True:
         data = file.readline().decode("utf-8").strip()
         if data in supported_events:
+            # Hack to get back to a "safe" blender thread, hopefully. But nothing is certain
             bpy.app.timers.register(partial(on_input_event, data), first_interval=0)
 
 
@@ -80,16 +83,33 @@ def get_active_tool():
     ).idname
 
 
-def tool_to_brush(mode: str, toollabel: str):
-    "Hacky"
-    brush = next(
+def lookup_brush(mode: str, brush_name: str) -> str | None:
+    return next(
         (brush for brush in get_mode_brushes(mode) if brush.name == brush_name), None
     )
+
+class MissingBrush(Exception):
+    pass
+
+def tool_to_brush(mode: str, toollabel: str):
+    """Hackily convert tool label to brushname
+    The tools have an operator associated with them to switch to the correct brush, but they raise errors when called here
+    """
+    brush = lookup_brush(mode, toollabel)
     if brush is not None:
         return brush
     if mode == "SCULPT":
-        return mode_label = f"Sculpt{}"
-    raise Exception(f"Unknown Mode: {mode}")
+        mode_label = f"Sculpt{toollabel}"
+    else:
+        raise Exception(f"Unknown Mode: {mode}")
+    brush = lookup_brush(mode, mode_label)
+    if brush is not None:
+        return brush
+    for suffix in ("/Deflate", "/Contrast", "/Deepen","/Peaks","/Magnify"):
+        brush = lookup_brush(mode, f"{toollabel}{suffix}")
+        if brush is not None:
+            return brush
+    raise MissingBrush(f"Failed to convert tool '{toollabel}' to a brush")
 
 
 def get_tools():
@@ -101,6 +121,7 @@ def get_tools():
 
 
 def cycle_mode_brush(mode: str, delta: int):
+    "This function barely works, but it works enough"
     if mode not in known_modes:
         return
     tool_idname = get_active_tool()
@@ -108,13 +129,10 @@ def cycle_mode_brush(mode: str, delta: int):
     idx = next(i for i, (oidname, _) in enumerate(tools) if oidname == tool_idname)
     idx += delta
     idx %= len(tools)
-    brush_name = tool_to_brush_name(mode, tools[idx][1])
-    brush = next(
-        (brush for brush in get_mode_brushes(mode) if brush.name == brush_name), None
-    )
-    if brush is None:
-        print("Can't find brush", brush_name)
-        return
+    try:
+        brush = tool_to_brush(mode, tools[idx][1])
+    except MissingBrush:
+        brush = tool_to_brush(mode, tools[0][1])
     set_mode_brush(mode, brush)
 
 
