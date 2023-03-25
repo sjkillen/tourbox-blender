@@ -4,8 +4,10 @@ use bluer::{
     gatt::remote::{Characteristic, Descriptor, Service},
     Adapter, Address, Device, Uuid,
 };
+use futures::{Future, FutureExt};
 use input::TourboxInput;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::signal::unix::{signal, SignalKind};
 
 const DEVICE_ADDR: bluer::Address = bluer::Address::new([0xDE, 0x85, 0xF6, 0xD0, 0xB1, 0xF2]);
 const UUID_TOURBOX_SERVICE: Uuid = Uuid::from_u128(0xfff000001000800000805f9b34fb);
@@ -78,12 +80,18 @@ impl Tourbox {
         writer.write_all(&line_6).await?;
         Ok(())
     }
-    pub async fn notifications(&mut self) -> bluer::Result<()> {
+    pub async fn notifications<F: Future<Output = ()>>(&mut self, until: F) -> bluer::Result<()> {
         let mut notifier = self.char000c.notify_io().await?;
         let mut buffer = [0u8; 2];
         eprintln!("Listening for events...");
+        let until = until.shared();
         loop {
-            let amount = notifier.read(&mut buffer).await?;
+            let amount = tokio::select! {
+                amount = notifier.read(&mut buffer) => {amount}
+                _ = until.clone() => {
+                    return Ok(());
+                }
+            }?;
             let event = if amount == 1 {
                 TourboxInput::from_u8(buffer[0])
             } else if amount == 2 {
@@ -132,7 +140,9 @@ async fn main() -> bluer::Result<()> {
     let mut tb = Tourbox::new(DEVICE_ADDR, adapter).await;
     eprintln!("Device connected! :)");
     tb.initial_protocol().await?;
-    tb.notifications().await?;
+    let stop = async { signal(SignalKind::interrupt()).unwrap().recv().await; };
+    tb.notifications(stop).await?;
 
+    println!("Exited cleanly");
     Ok(())
 }
