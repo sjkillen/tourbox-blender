@@ -1,13 +1,17 @@
 #![feature(generic_arg_infer)]
 
+use std::{error::Error, fmt::Display};
+
 use bluer::{
     gatt::remote::{Characteristic, Descriptor, Service},
     Adapter, Address, Device, Uuid,
 };
-use futures::{Future, FutureExt};
+use futures::{future::Shared, Future, FutureExt};
 use input::TourboxInput;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::signal::unix::{signal, SignalKind};
+
+type TBResult<T> = Result<T, Box<dyn Error>>;
 
 const DEVICE_ADDR: bluer::Address = bluer::Address::new([0xDE, 0x85, 0xF6, 0xD0, 0xB1, 0xF2]);
 const UUID_TOURBOX_SERVICE: Uuid = Uuid::from_u128(0xfff000001000800000805f9b34fb);
@@ -19,7 +23,25 @@ const UUID_CHAR000C_DESC000E: Uuid = Uuid::from_u128(0x290200001000800000805f9b3
 
 mod input;
 
-pub struct Tourbox {
+#[derive(Debug)]
+struct ShutdownError;
+impl Display for ShutdownError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Interupted by a shutdown signal")
+    }
+}
+impl Error for ShutdownError {}
+impl ShutdownError {
+    fn new<T>() -> TBResult<T> {
+        Err(Box::new(ShutdownError))
+    }
+}
+
+pub struct Tourbox<F>
+where
+    F: Future<Output = ()>,
+{
+    pub shutdown: Shared<F>,
     pub device: Device,
     pub service: Service,
     pub char0011: Characteristic,
@@ -29,28 +51,37 @@ pub struct Tourbox {
     pub char000c_desc000e: Descriptor,
 }
 
-impl Tourbox {
-    pub async fn new(addr: Address, adapter: Adapter) -> Tourbox {
+impl<F: Future<Output = ()>> Tourbox<F> {
+    pub async fn new(addr: Address, adapter: Adapter, shutdown: F) -> TBResult<Tourbox<F>> {
         let device = adapter.device(addr).unwrap();
         device.connect().await.unwrap();
-        let service = find_service(&device, UUID_TOURBOX_SERVICE).await;
-        let char0011 = find_characteristic(&service, UUID_CHAR0011).await;
-        let char0011_desc0013 = find_descriptor(&char0011, UUID_CHAR0011_DESC0013).await;
-        let char000f = find_characteristic(&service, UUID_CHAR000F).await;
-        let char000c = find_characteristic(&service, UUID_CHAR000C).await;
-        let char000c_desc000e = find_descriptor(&char000c, UUID_CHAR000C_DESC000E).await;
+        let shutdown = shutdown.shared();
+        let construct = async {
+            let shutdown = shutdown.clone();
+            let service = find_service(&device, UUID_TOURBOX_SERVICE).await;
+            let char0011 = find_characteristic(&service, UUID_CHAR0011).await;
+            let char0011_desc0013 = find_descriptor(&char0011, UUID_CHAR0011_DESC0013).await;
+            let char000f = find_characteristic(&service, UUID_CHAR000F).await;
+            let char000c = find_characteristic(&service, UUID_CHAR000C).await;
+            let char000c_desc000e = find_descriptor(&char000c, UUID_CHAR000C_DESC000E).await;
 
-        return Tourbox {
-            device,
-            service,
-            char0011,
-            char0011_desc0013,
-            char000f,
-            char000c,
-            char000c_desc000e,
+            return Tourbox {
+                shutdown,
+                device,
+                service,
+                char0011,
+                char0011_desc0013,
+                char000f,
+                char000c,
+                char000c_desc000e,
+            };
         };
+        tokio::select! {
+            tb = construct => Ok(tb),
+            _ = shutdown.clone() => ShutdownError::new(),
+        }
     }
-    pub async fn initial_protocol(&mut self) -> bluer::Result<()> {
+    pub async fn initial_protocol(&mut self) -> TBResult<()> {
         let mut writer = self.char000f.write_io().await?;
         let line_1: [u8; _] = [0x55, 0x00, 0x07, 0x88, 0x94, 0x00, 0x1a, 0xfe];
         let line_2: [u8; _] = [
@@ -72,23 +103,28 @@ impl Tourbox {
         let line_6: [u8; _] = [
             0x08, 0x53, 0x08, 0x54, 0x08, 0xa8, 0x08, 0xa9, 0x08, 0xaa, 0x08, 0xab, 0x08, 0xfe,
         ];
-        writer.write_all(&line_1).await?;
-        writer.write_all(&line_2).await?;
-        writer.write_all(&line_3).await?;
-        writer.write_all(&line_4).await?;
-        writer.write_all(&line_5).await?;
-        writer.write_all(&line_6).await?;
-        Ok(())
+        let writing = async {
+            writer.write_all(&line_1).await?;
+            writer.write_all(&line_2).await?;
+            writer.write_all(&line_3).await?;
+            writer.write_all(&line_4).await?;
+            writer.write_all(&line_5).await?;
+            writer.write_all(&line_6).await?;
+            Ok(()) as TBResult<_>
+        };
+        tokio::select! {
+            _ = writing => Ok(()),
+            _ = self.shutdown.clone() => ShutdownError::new(),
+        }
     }
-    pub async fn notifications<F: Future<Output = ()>>(&mut self, until: F) -> bluer::Result<()> {
+    pub async fn notifications(&mut self) -> TBResult<()> {
         let mut notifier = self.char000c.notify_io().await?;
         let mut buffer = [0u8; 2];
         eprintln!("Listening for events...");
-        let until = until.shared();
         loop {
             let amount = tokio::select! {
                 amount = notifier.read(&mut buffer) => {amount}
-                _ = until.clone() => {
+                _ = self.shutdown.clone() => {
                     return Ok(());
                 }
             }?;
@@ -132,17 +168,30 @@ async fn find_descriptor(characteristic: &Characteristic, uuid: Uuid) -> Descrip
 }
 
 #[tokio::main]
-async fn main() -> bluer::Result<()> {
-    let session = bluer::Session::new().await?;
-    let adapter = session.default_adapter().await?;
-    adapter.set_powered(true).await?;
+async fn main() -> TBResult<()> {
+    let stop = async {
+        signal(SignalKind::interrupt()).unwrap().recv().await;
+    }
+    .shared();
 
-    let mut tb = Tourbox::new(DEVICE_ADDR, adapter).await;
+    let startup = async {
+        let session = bluer::Session::new().await?;
+        let adapter = session.default_adapter().await?;
+        adapter.set_powered(true).await?;
+        Ok(adapter) as TBResult<_>
+    };
+    let adapter = tokio::select! {
+        _ = stop.clone() => {
+            eprintln!("Exited before startup?");
+            return ShutdownError::new();
+        },
+        result = startup => result?,
+    };
+    let mut tb = Tourbox::new(DEVICE_ADDR, adapter, stop).await?;
     eprintln!("Device connected! :)");
     tb.initial_protocol().await?;
-    let stop = async { signal(SignalKind::interrupt()).unwrap().recv().await; };
-    tb.notifications(stop).await?;
+    tb.notifications().await?;
 
-    println!("Exited cleanly");
+    eprintln!("Exited cleanly");
     Ok(())
 }
