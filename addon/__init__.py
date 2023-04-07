@@ -29,24 +29,88 @@ from subprocess import Popen, PIPE
 from threading import Thread
 from typing import IO
 from typing import Generic
-
+from time import time
+from dataclasses import dataclass, field
+import pickle
 
 import bpy
 from bpy.types import Brush
+from math import inf
 
 T = Generic()
 
 EXE = "/home/squirrel/tourbox-blender/target/debug/tbelite"
-
+PICKLECONFIG = "/home/squirrel/.config/tourbox-blender.pickle"
+SWATCH_TIMEOUT = 1  # second(s)
 
 TallDialPressed = False
 FlatWheelPressed = False
+
+
+@dataclass(slots=True)
+class BrushSwatch:
+    mode: str
+    buttons: tuple[str]
+    timeout: float = field(init=False, default=inf)
+    __storage: dict = field(init=False, default_factory=dict)
+
+    def tap(self, button: str):
+        if bpy.context.mode != self.mode:
+            return
+        if "Press" in button:
+            self.__press(button)
+        elif "Release" in button:
+            self.__release(button)
+
+    def __release(self, button: str):
+        button = button.replace("Release", "")
+        if time() - self.timeout >= SWATCH_TIMEOUT:
+            brush = get_mode_active_brush(self.mode)
+            self.__storage[button] = brush.name
+            print(f"Set '{button}' to '{brush.name}'")
+            self.timeout = inf
+
+    def __press(self, button: str):
+        self.timeout = time()
+        button = button.replace("Press", "")
+        brush = self.__storage.get(button, None)
+        if brush is None or brush not in bpy.data.brushes:
+            return
+        brush = bpy.data.brushes[brush]
+        set_mode_brush(self.mode, brush)
+        print(f"Used '{button}' to switch to '{brush.name}'")
+
+
+try:
+    with open(PICKLECONFIG, "rb") as fo:
+        SWATCHES = pickle.load(fo)
+except Exception as e:
+    print(e)
+    SWATCHES = (
+        BrushSwatch(
+            "SCULPT",
+            (
+                "DpadLeft",
+                "DpadRight",
+                "DpadUp",
+                "DpadDown",
+                "BottomRightClickerLeft",
+                "BottomRightClickerRight",
+                "SideThumb",
+                "LongBarButton",
+            ),
+        ),
+    )
 
 
 def on_input_event(event: str):
     global TallDialPressed, FlatWheelPressed
 
     mode = bpy.context.mode
+    for swatch in SWATCHES:
+        swatch.tap(event)
+    with open(PICKLECONFIG, "wb") as fo:
+        pickle.dump(SWATCHES, file=fo)
     if mode not in known_modes:
         return
     print(event)
