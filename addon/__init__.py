@@ -104,8 +104,6 @@ except Exception as e:
 
 
 def on_input_event(event: str):
-    global TallDialPressed, FlatWheelPressed
-
     mode = bpy.context.mode
     for swatch in SWATCHES:
         swatch.tap(event)
