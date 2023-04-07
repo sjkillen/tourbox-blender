@@ -102,7 +102,6 @@ except Exception as e:
         ),
     )
 
-
 def on_input_event(event: str):
     mode = bpy.context.mode
     for swatch in SWATCHES:
