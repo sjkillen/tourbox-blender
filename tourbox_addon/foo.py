@@ -1,50 +1,3 @@
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTIBILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-# General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
-
-bl_info = {
-    "name": "tourbox-controller",
-    "author": ".",
-    "description": "",
-    "blender": (2, 80, 0),
-    "version": (0, 0, 1),
-    "location": "",
-    "warning": "",
-    "category": "Generic",
-}
-
-from functools import partial
-from os import kill
-from signal import SIGINT
-from subprocess import Popen, PIPE
-from threading import Thread
-from typing import IO
-from typing import Generic
-from time import time
-from dataclasses import dataclass, field
-import pickle
-
-import bpy
-from bpy.types import Brush
-from math import inf
-
-T = Generic()
-
-EXE = "/home/squirrel/tourbox-blender/target/debug/tbelite"
-PICKLECONFIG = "/home/squirrel/.config/tourbox-blender.pickle"
-SWATCH_TIMEOUT = 1  # second(s)
-
-TallDialPressed = False
-FlatWheelPressed = False
 
 
 @dataclass(slots=True)
@@ -101,6 +54,7 @@ except Exception as e:
             ),
         ),
     )
+
 
 def on_input_event(event: str):
     mode = bpy.context.mode
@@ -193,12 +147,6 @@ def scroll_value_T(target, attr: str, minv: T, maxv: T, step: T):
     setattr(target, attr, clamped)
 
 
-def thread_entry(file: IO):
-    while True:
-        data = file.readline().decode("utf-8").strip()
-        if data != "Unknown" and data.strip():
-            # Hack to get back to a "safe" blender thread, hopefully. But nothing is certain
-            bpy.app.timers.register(partial(on_input_event, data), first_interval=0)
 
 
 def set_mode_brush(mode: str, brush: Brush):
@@ -280,33 +228,6 @@ def cycle_mode_brush(mode: str, delta: int):
         brush = tool_to_brush(mode, tools[0][1])
     set_mode_brush(mode, brush)
 
-
-daemon = None
-
-
-def start_daemon():
-    global daemon
-    if daemon is not None:
-        return
-    daemon = Popen([EXE], stdout=PIPE)
-    t = Thread(target=thread_entry, args=(daemon.stdout,))
-    t.start()
-
-
-def stop_daemon():
-    global daemon
-    if daemon is None:
-        return
-    kill(daemon.pid, SIGINT)
-    daemon = None
-
-
-def register():
-    start_daemon()
-
-
-def unregister():
-    stop_daemon()
 
 
 known_modes = {
