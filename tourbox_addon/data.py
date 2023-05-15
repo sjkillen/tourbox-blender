@@ -1,21 +1,33 @@
-from pathlib import Path
 import pickle
 import base64
 from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Iterator
 
 import bpy
-from bpy.types import AddonPreferences, Context
+from bpy.types import AddonPreferences, Brush
 from bpy.props import StringProperty
 
-PICKLECONFIG = str((Path.home() / ".config/tourbox-blender.pickle").resolve())
 
-try:
-    with open(PICKLECONFIG, "rb") as fo:
-        SWATCHES = pickle.load(fo)
-except Exception as e:
-    print(e)
+@dataclass(slots=True)
+class Store:
+    @staticmethod
+    def make_brush_name(mode: str, button: str):
+        return f"{button}{mode}Brush"
 
-__store = None
+    def get_brush(self, mode: str, button: str):
+        return bpy.data.brushes.get(Store.make_brush_name(mode, button), None)
+
+    def overwrite_brush(self, mode: str, button: str, brush: Brush) -> Brush:
+        oldbrush = self.get_brush(mode, button)
+        if oldbrush is not None:
+            bpy.data.brushes.remove(oldbrush)
+        brush = brush.copy()
+        brush.name = Store.make_brush_name(mode, button)
+        return brush
+
+
+__store: Store | None = None
 
 
 def derialize(data: str) -> tuple:
@@ -30,14 +42,15 @@ class AddonTourboxPreferences(AddonPreferences):
     bl_idname = __package__
 
     storage: StringProperty(
-        name="Use View Axes X",
-        description="If enabled, the X axis is relative to the 3D viewport instead of the global axes",
-        default=serialize(tuple()),
+        name="Persistent Storage",
+        description="Stores the addon configuration",
+        default=serialize(Store()),
     )
 
 
 @contextmanager
-def modify_store():
+def modify_store() -> Iterator[Store]:
+    global __store
     prefs = bpy.context.preferences.addons[__package__].preferences
     if __store is None:
         __store = derialize(prefs.storage)

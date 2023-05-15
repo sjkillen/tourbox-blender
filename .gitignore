@@ -1,5 +1,5 @@
 /target
 .vscode
-addon/__pycache__
+tourbox_addon/__pycache__
 addon.zip
 tourbox_addon/tbelite
