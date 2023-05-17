@@ -1,6 +1,5 @@
+from typing import Annotated, Any, get_type_hints
 from bpy.types import Context, Paint, Brush
-from tourbox_addon.data import modify_store
-
 from tourbox_addon.util import default_context
 
 
@@ -54,20 +53,67 @@ def set_active_brush_size(ctx: Context, size: int) -> int:
 
 
 @default_context
-def set_active_brush_strength(ctx: Context, strength: float) -> float:
+def get_active_brush_size(ctx: Context) -> int:
+    return set_active_brush_size(ctx, -1)
+
+
+@default_context
+def set_active_brush_strength(ctx: Context, strength: float | None) -> float:
     """
     Similar to set_active_brush_size but for brush strength
     Note that unified strength in Blender is bugged currently
     """
     settings = ctx.tool_settings.unified_paint_settings
     target = settings if settings.use_unified_strength else get_active_brush(ctx)
-    target.size = max(0, min(10, strength))
+    if strength in range(0, 10):
+        target.size = max(0, min(10, strength))
     return target.size
 
 
 @default_context
-def bind_active_brush_button(ctx: Context, button: str):
-    brush = get_active_brush()
-    with modify_store() as store:
-        newbrush = store.overwrite_brush(ctx.mode, button, brush)
-    set_active_brush(newbrush)
+def get_active_brush_strength(ctx: Context) -> float:
+    return set_active_brush_strength(ctx, -1.0)
+
+
+@default_context
+def set_active_brush_flow(ctx: Context, flow: float) -> float:
+    brush = get_active_brush(ctx)
+    brush.flow = max(0.0, min(1.0, flow))
+    return brush.flow
+
+
+@default_context
+def get_active_brush_flow(ctx: Context) -> float:
+    return set_active_brush_flow(ctx, -1.0)
+
+
+class ActiveBrush:
+    # lowerbound, upperbound, use_unified
+    strength: Annotated[float, 0.0, 10.0, True]
+    size: Annotated[int, 1, 5000, True]
+    flow: Annotated[float, 0.0, 1.0, False]
+
+    @default_context
+    def __init__(self, ctx: Context) -> None:
+        self.ctx = ctx
+
+    def __getattr__(self, field: str):
+        return self.__access(self, field, None)
+
+    def __setattr__(self, name: str, value):
+        self.__access(name, value)
+
+    def __access(self, field: str, value):
+        lowerbound, upperbound, use_unified = ActiveBrush.__annotations__[
+            field
+        ].__metadata__
+        settings = self.ctx.tool_settings.unified_paint_settings
+        target = (
+            settings
+            if use_unified and settings.use_unified_strength
+            else get_active_brush(self.ctx)
+        )
+        if value is not None:
+            value = max(lowerbound, min(upperbound, value))
+            setattr(target, field, value)
+        return getattr(target, field)
