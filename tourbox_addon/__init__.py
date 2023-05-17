@@ -16,19 +16,15 @@ bl_info = {
     "author": ".",
     "description": "",
     "blender": (2, 80, 0),
-    "version": (0, 0, 1),
+    "version": (0, 0, 2),
     "location": "",
     "warning": "",
     "category": "Generic",
 }
 
 import bpy
-from pathlib import Path
-import pickle
 
 from tourbox_addon.data import AddonTourboxPreferences
-
-EXE = str(Path(__file__, "../tbelite").resolve())
 
 from tourbox_addon.daemon import start_daemon, stop_daemon
 

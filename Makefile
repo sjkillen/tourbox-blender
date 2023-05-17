@@ -10,6 +10,7 @@ addon.zip: target/release/tbelite
 	cp -a tourbox_addon /tmp/tourbox_addon
 	cp $^ /tmp/tourbox_addon
 	rm -rf /tmp/tourbox_addon/__pycache__
+	chmod +x /tmp/tourbox_addon/tbelite
 	cd /tmp && rm -f addon.zip && zip -r addon.zip tourbox_addon/
 	mv /tmp/addon.zip $@
 

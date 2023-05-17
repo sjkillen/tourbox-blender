@@ -1,5 +1,6 @@
 from functools import partial
 from os import kill
+from pathlib import Path
 from signal import SIGINT
 from subprocess import PIPE, Popen
 from threading import Thread
@@ -7,7 +8,6 @@ from typing import IO
 
 import bpy
 
-from tourbox_addon import EXE
 from tourbox_addon.events import on_input_event
 
 
@@ -18,7 +18,8 @@ def start_daemon():
     global daemon
     if daemon is not None:
         return
-    daemon = Popen([EXE], stdout=PIPE)
+    exe = str(Path(__file__, "../tbelite").resolve())
+    daemon = Popen([exe], stdout=PIPE)
     t = Thread(target=thread_entry, args=(daemon.stdout,))
     t.start()
 
