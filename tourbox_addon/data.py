@@ -21,6 +21,8 @@ class Store:
     def overwrite_brush(self, mode: str, button: str, brush: Brush) -> Brush:
         oldbrush = self.get_brush(mode, button)
         if oldbrush is not None:
+            if oldbrush.name == brush.name:
+                return oldbrush
             bpy.data.brushes.remove(oldbrush)
         brush = brush.copy()
         brush.name = Store.make_brush_name(mode, button)
@@ -31,11 +33,11 @@ __store: Store | None = None
 
 
 def derialize(data: str) -> tuple:
-    return pickle.loads(base64.decodebytes(data))
+    return pickle.loads(base64.b64decode(data.encode()))
 
 
 def serialize(data: tuple) -> str:
-    return base64.encode(pickle.dumps(data))
+    return base64.b64encode(pickle.dumps(data)).decode("ascii")
 
 
 class AddonTourboxPreferences(AddonPreferences):

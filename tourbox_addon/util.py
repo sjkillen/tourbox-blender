@@ -19,6 +19,6 @@ def default_context(fn):
         kwargs.update(args)
         if context_param not in kwargs:
             kwargs[context_param] = bpy.context
-        fn(**kwargs)
+        return fn(**kwargs)
 
     return wrapper

@@ -3,6 +3,26 @@ from bpy.types import Context, Paint, Brush
 from tourbox_addon.util import default_context
 
 
+SCULPT_BRUSH_DIRECTIONS = {
+    "ADD": "SUBTRACT",
+    "INFLATE": "DEFLATE",
+    "CONTRAST": "FLATTEN",
+    "SMOOTH": "ENHANCE_DETAILS",
+    "FILL": "DEEPEN",
+    "SCRAPE": "PEAKS",
+    "MAGNIFY": "PINCH",
+}
+SCULPT_BRUSH_DIRECTIONS_INV = {
+    value: key for key, value in SCULPT_BRUSH_DIRECTIONS.items()
+}
+
+unified_fields = {
+    "strength": "use_unified_strength",
+    "size": "use_unified_size",
+    "color": "use_unified_color",
+}
+
+
 @default_context
 def get_paint(ctx: Context) -> Paint:
     match ctx.mode:
@@ -89,28 +109,49 @@ def get_active_brush_flow(ctx: Context) -> float:
 
 class ActiveBrush:
     # lowerbound, upperbound, use_unified
-    strength: Annotated[float, 0.0, 10.0, True]
-    size: Annotated[int, 1, 5000, True]
-    flow: Annotated[float, 0.0, 1.0, False]
+    strength: Annotated[float, 0.0, 10.0]
+    size: Annotated[int, 1, 5000]
+    flow: Annotated[float, 0.0, 1.0]
+    direction: bool
 
     @default_context
     def __init__(self, ctx: Context) -> None:
-        self.ctx = ctx
+        object.__setattr__(self, "ctx", ctx)
+
+    def direction_get(self) -> bool:
+        brush = get_active_brush(self.ctx)
+        if brush.direction in SCULPT_BRUSH_DIRECTIONS:
+            return 1
+        else:
+            assert brush.direction in SCULPT_BRUSH_DIRECTIONS_INV
+            return 0
+
+    def direction_set(self, v: int):
+        brush = get_active_brush(self.ctx)
+        assert v in range(0, 2)
+        if self.direction_get() == 0:
+            brush.direction = SCULPT_BRUSH_DIRECTIONS_INV[brush.direction]
+        else:
+            brush.direction = SCULPT_BRUSH_DIRECTIONS[brush.direction]
 
     def __getattr__(self, field: str):
-        return self.__access(self, field, None)
+        # TODO can't get property's to work right with getattr/setattr
+        if field == "direction":
+            return self.direction_get()
+        return self.__access(field, None)
 
-    def __setattr__(self, name: str, value):
-        self.__access(name, value)
+    def __setattr__(self, field: str, value):
+        # TODO can't get property's to work right with getattr/setattr
+        if field == "direction":
+            return self.direction_set(value)
+        self.__access(field, value)
 
     def __access(self, field: str, value):
-        lowerbound, upperbound, use_unified = ActiveBrush.__annotations__[
-            field
-        ].__metadata__
+        lowerbound, upperbound = ActiveBrush.__annotations__[field].__metadata__
         settings = self.ctx.tool_settings.unified_paint_settings
         target = (
             settings
-            if use_unified and settings.use_unified_strength
+            if field in unified_fields and getattr(settings, unified_fields[field])
             else get_active_brush(self.ctx)
         )
         if value is not None:
