@@ -6,6 +6,7 @@ target/release/tbelite:
 
 .PHONY: addon.zip
 addon.zip: target/release/tbelite
+	rm -rf /tmp/tourbox_addon
 	cp -a tourbox_addon /tmp/tourbox_addon
 	cp $^ /tmp/tourbox_addon
 	rm -rf /tmp/tourbox_addon/__pycache__
