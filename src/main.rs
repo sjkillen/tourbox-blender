@@ -133,7 +133,8 @@ impl<F: Future<Output = ()>> Tourbox<F> {
             } else if amount == 2 {
                 TourboxInput::from_u16(u16::from_be_bytes(buffer))
             } else {
-                panic!()
+                println!("Got an event bigger than 2 bytes. Ignored it");
+                continue;
             };
             println!("{}", event);
         }
