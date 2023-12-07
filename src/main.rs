@@ -123,12 +123,16 @@ impl<F: Future<Output = ()>> Tourbox<F> {
         }
     }
     pub async fn notifications(&mut self) -> TBResult<()> {
-        let mut notifier = self.char000c.notify_io().await?;
         let mut buffer = [0u8; 4096];
         eprintln!("Listening for events...");
         loop {
+            // Notifier buffers data, rebuild it each iteration
+            // Putting this inside the loop seems to greatly reduce the number of wheel events
+            // There's something not working with how CharacteristicReader buffers things for async reads
+            let mut notifier = self.char000c.notify_io().await?;
+            // Note that this will only flush the fd, not the library's async buffer
             let amount = if let Ok(data) = notifier.try_recv() {
-                eprintln!("Discarded {} bytes (1)", data.len());
+                eprintln!("Discarded {} bytes (from fd)", data.len());
                 continue;
             } else {
                 tokio::select! {
@@ -143,7 +147,7 @@ impl<F: Future<Output = ()>> Tourbox<F> {
             } else if amount == 2 {
                 TourboxInput::from_u16(u16::from_be_bytes([buffer[0], buffer[1]]))
             } else {
-                eprintln!("Discarded {} bytes (2)", amount);
+                eprintln!("Discarded {} bytes (read too much)", amount);
                 continue;
             };
             println!("{}", event);
