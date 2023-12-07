@@ -4,8 +4,9 @@ use std::{error::Error, fmt::Display};
 
 use bluer::{
     gatt::remote::{Characteristic, Descriptor, Service},
-    Adapter, Address, Device, Uuid,
+    Adapter, AdapterEvent, Address, Device, Uuid,
 };
+use futures::stream::StreamExt;
 use futures::{future::Shared, Future, FutureExt};
 use input::TourboxInput;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -52,7 +53,11 @@ where
 }
 
 impl<F: Future<Output = ()>> Tourbox<F> {
-    pub async fn new(addr: Address, adapter: Adapter, shutdown: F) -> TBResult<Tourbox<F>> {
+    pub async fn start_server(
+        addr: Address,
+        adapter: Adapter,
+        shutdown: F,
+    ) -> TBResult<Tourbox<F>> {
         let device = adapter.device(addr).unwrap();
         device.connect().await.unwrap();
         let shutdown = shutdown.shared();
@@ -119,21 +124,26 @@ impl<F: Future<Output = ()>> Tourbox<F> {
     }
     pub async fn notifications(&mut self) -> TBResult<()> {
         let mut notifier = self.char000c.notify_io().await?;
-        let mut buffer = [0u8; 2];
+        let mut buffer = [0u8; 4096];
         eprintln!("Listening for events...");
         loop {
-            let amount = tokio::select! {
-                amount = notifier.read(&mut buffer) => {amount}
-                _ = self.shutdown.clone() => {
-                    return Ok(());
-                }
-            }?;
+            let amount = if let Ok(data) = notifier.try_recv() {
+                eprintln!("Discarded {} bytes (1)", data.len());
+                continue;
+            } else {
+                tokio::select! {
+                    amount = notifier.read(&mut buffer) => {amount}
+                    _ = self.shutdown.clone() => {
+                        return Ok(());
+                    }
+                }?
+            };
             let event = if amount == 1 {
                 TourboxInput::from_u8(buffer[0])
             } else if amount == 2 {
-                TourboxInput::from_u16(u16::from_be_bytes(buffer))
+                TourboxInput::from_u16(u16::from_be_bytes([buffer[0], buffer[1]]))
             } else {
-                println!("Got an event bigger than 2 bytes. Ignored it");
+                eprintln!("Discarded {} bytes (2)", amount);
                 continue;
             };
             println!("{}", event);
@@ -179,7 +189,16 @@ async fn main() -> TBResult<()> {
         let session = bluer::Session::new().await?;
         let adapter = session.default_adapter().await?;
         adapter.set_powered(true).await?;
-        Ok(adapter) as TBResult<_>
+        let mut devices = adapter.discover_devices().await?;
+        eprintln!("Scanning...");
+        while let Some(device) = devices.next().await {
+            if let AdapterEvent::DeviceAdded(addr) = device {
+                if addr == DEVICE_ADDR {
+                    return Ok(adapter);
+                }
+            }
+        }
+        TBResult::<_>::Err(Box::new(ShutdownError))
     };
     let adapter = tokio::select! {
         _ = stop.clone() => {
@@ -188,7 +207,7 @@ async fn main() -> TBResult<()> {
         },
         result = startup => result?,
     };
-    let mut tb = Tourbox::new(DEVICE_ADDR, adapter, stop).await?;
+    let mut tb = Tourbox::start_server(DEVICE_ADDR, adapter, stop).await?;
     eprintln!("Device connected! :)");
     tb.initial_protocol().await?;
     tb.notifications().await?;
